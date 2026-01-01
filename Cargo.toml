@@ -1,0 +1,12 @@
+[package]
+name = "ifs_lang"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { version = "1.0.100", features = ["backtrace"] }
+num = "0.4.3"
+
+[dependencies.nbnf]
+git = "https://github.com/Yoplitein/nbnf.git"
+rev = "9e855bdca16c850701a4cbbbec9e771ea5e27b16"
