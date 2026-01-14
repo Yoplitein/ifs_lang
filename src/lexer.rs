@@ -1,9 +1,11 @@
 use nbnf::nom::{self, combinator::eof, error::FromExternalError};
 use num::Complex;
+use strum::EnumDiscriminants;
 
 use crate::AResult;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, EnumDiscriminants)]
+#[strum_discriminants(name(TokenTy))]
 pub enum Token {
 	LParen,
 	RParen,
@@ -23,11 +25,11 @@ pub enum Token {
 	For,
 
 	Identifier(String),
-	Literal(Literal),
+	Literal(Value),
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum Literal {
+pub enum Value {
 	Real(f64),
 	Complex(Complex<f64>),
 }
@@ -73,12 +75,12 @@ nbnf::nbnf!(
 
 	identifier<String> = -![0-9] ([a-zA-Z0-9]+)|<String::from_iter>;
 
-	literal<Literal> = literal_complex / literal_real;
+	literal<Value> = literal_complex / literal_real;
 	scalar<&str> = ~([0-9]+ '.' [0-9]+) / ~([0-9]+);
 "#
 );
 
-fn literal_real(input: &str) -> nom::IResult<&str, Literal> {
+fn literal_real(input: &str) -> nom::IResult<&str, Value> {
 	let (rest, re) = scalar.parse(input)?;
 	let re = match re.parse::<f64>() {
 		Ok(v) => v,
@@ -90,10 +92,10 @@ fn literal_real(input: &str) -> nom::IResult<&str, Literal> {
 			)));
 		},
 	};
-	Ok((rest, Literal::Real(re)))
+	Ok((rest, Value::Real(re)))
 }
 
-fn literal_complex(re_start: &str) -> nom::IResult<&str, Literal> {
+fn literal_complex(re_start: &str) -> nom::IResult<&str, Value> {
 	let (rest, re) = scalar.parse(re_start)?;
 	let re = match re.parse::<f64>() {
 		Ok(v) => v,
@@ -122,6 +124,6 @@ fn literal_complex(re_start: &str) -> nom::IResult<&str, Literal> {
 		},
 	};
 
-	let val = Literal::Complex(Complex::new(re, im));
+	let val = Value::Complex(Complex::new(re, im));
 	Ok((rest, val))
 }
