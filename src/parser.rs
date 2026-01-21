@@ -1,9 +1,12 @@
 use std::{collections::HashMap, iter::Enumerate, ops::Range, slice::Iter};
 
-use nbnf::nom::{self, combinator::eof, multi::separated_list1, error::FromExternalError};
+use nbnf::nom::{self, combinator::eof, error::FromExternalError, multi::separated_list1};
 use strum::IntoDiscriminant;
 
-use crate::{AResult, lexer::{Token, TokenTy, Value}};
+use crate::{
+	AResult,
+	lexer::{Token, TokenTy, Value},
+};
 
 #[derive(Debug, Default)]
 pub struct Module {
@@ -38,10 +41,7 @@ pub enum Expr {
 	Pow(Box<Self>, Box<Self>),
 	Neg(Box<Self>),
 
-	Call {
-		function: String,
-		args: Vec<Self>,
-	}
+	Call { function: String, args: Vec<Self> },
 }
 
 pub fn parse(input: &[Token]) -> AResult<Module> {
@@ -61,10 +61,11 @@ enum Top {
 		variable: String,
 		range: Range<Value>,
 		body: Vec<Top>,
-	}
+	},
 }
 
-nbnf::nbnf!(r#"
+nbnf::nbnf!(
+	r#"
 	#input <Tokens>
 	#output <!>
 
@@ -104,7 +105,10 @@ nbnf::nbnf!(r#"
 	expr_p0<Expr> = (
 		expr_p1
 		(
-			(<token(TokenTy::Plus)> / <token(TokenTy::Minus)>)
+			(
+				<token(TokenTy::Plus)> /
+				<token(TokenTy::Minus)>
+			)
 			expr_p1
 		)?
 	)|<fold_expr>;
@@ -112,7 +116,10 @@ nbnf::nbnf!(r#"
 	expr_p1<Expr> = (
 		expr_p2
 		(
-			(<token(TokenTy::Asterisk)> / <token(TokenTy::Slash)>)
+			(
+				<token(TokenTy::Asterisk)> /
+				<token(TokenTy::Slash)>
+			)
 			expr_p2
 		)?
 	)|<fold_expr>;
@@ -152,7 +159,8 @@ nbnf::nbnf!(r#"
 		<token(TokenTy::Literal)>|<map_expr_literal>;
 	expr_variable<Expr> =
 		<token(TokenTy::Identifier)>|<map_expr_variable>;
-"#);
+"#
+);
 
 fn token(ty: TokenTy) -> impl Fn(Tokens) -> nom::IResult<Tokens, &Token> {
 	move |input: Tokens| -> nom::IResult<Tokens, &Token> {
@@ -175,7 +183,11 @@ fn unwrap_top(nodes: Vec<Top>) -> Module {
 		match node {
 			Top::VarDecl(name) => module.variables.push(name),
 			Top::Func(body) => module.functions.push(Function::new(body)),
-			Top::ForLoop { variable, range, body: inner } => {
+			Top::ForLoop {
+				variable,
+				range,
+				body: inner,
+			} => {
 				let Value::Real(mut value) = range.start else {
 					// FIXME: propagate via result
 					panic!("for loop start cannot be complex")
@@ -186,10 +198,7 @@ fn unwrap_top(nodes: Vec<Top>) -> Module {
 				// TODO: user-specified step value
 				let step = 1.0;
 				while value < end {
-					let constants = HashMap::from_iter([(
-						variable.clone(),
-						Value::Real(value),
-					)]);
+					let constants = HashMap::from_iter([(variable.clone(), Value::Real(value))]);
 					for body in &inner {
 						let constants = constants.clone();
 						let Top::Func(body) = body else {
@@ -197,10 +206,7 @@ fn unwrap_top(nodes: Vec<Top>) -> Module {
 						};
 						// TODO: slap in an Arc?
 						let body = body.clone();
-						module.functions.push(Function {
-							constants,
-							body,
-						})
+						module.functions.push(Function { constants, body })
 					}
 					value += step;
 				}
@@ -250,7 +256,7 @@ fn fold_expr((lhs, rhs): (Expr, Option<(&Token, Expr)>)) -> Expr {
 				Token::Caret => Expr::Pow(lhs, rhs),
 				_ => unreachable!("parsed operator token but trying to fold different token"),
 			}
-		}
+		},
 	}
 }
 
@@ -259,10 +265,7 @@ fn map_expr_call((func, args): (&Token, Vec<Expr>)) -> Expr {
 		unreachable!("parsed identifier but getting different token")
 	};
 	let function = function.clone();
-	Expr::Call {
-		function,
-		args,
-	}
+	Expr::Call { function, args }
 }
 
 fn map_expr_literal(token: &Token) -> Expr {
@@ -305,8 +308,9 @@ impl<'a> nom::Input for Tokens<'a> {
 	}
 
 	fn position<P>(&self, predicate: P) -> Option<usize>
-	  where
-		P: Fn(Self::Item) -> bool {
+	where
+		P: Fn(Self::Item) -> bool,
+	{
 		self.0.iter().position(predicate)
 	}
 
