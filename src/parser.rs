@@ -1,6 +1,6 @@
 use std::{collections::HashMap, iter::Enumerate, ops::Range, slice::Iter};
 
-use nbnf::nom::{self, combinator::eof, error::FromExternalError};
+use nbnf::nom::{self, combinator::eof, multi::separated_list1, error::FromExternalError};
 use strum::IntoDiscriminant;
 
 use crate::{AResult, lexer::{Token, TokenTy, Value}};
@@ -36,6 +36,7 @@ pub enum Expr {
 	Mul(Box<Self>, Box<Self>),
 	Div(Box<Self>, Box<Self>),
 	Pow(Box<Self>, Box<Self>),
+	Neg(Box<Self>),
 
 	Call {
 		function: String,
@@ -98,8 +99,59 @@ nbnf::nbnf!(r#"
 		expr|<Top::Func>
 		-<token(TokenTy::Semicolon)>;
 	
-	expr<Expr> =
-		<token(TokenTy::Literal)>|<map_literal>;
+	expr<Expr> = expr_p0;
+
+	expr_p0<Expr> = (
+		expr_p1
+		(
+			(<token(TokenTy::Plus)> / <token(TokenTy::Minus)>)
+			expr_p1
+		)?
+	)|<fold_expr>;
+
+	expr_p1<Expr> = (
+		expr_p2
+		(
+			(<token(TokenTy::Asterisk)> / <token(TokenTy::Slash)>)
+			expr_p2
+		)?
+	)|<fold_expr>;
+
+	expr_p2<Expr> = (
+		expr_p3
+		(
+			<token(TokenTy::Caret)>
+			expr_p2
+		)?
+	)|<fold_expr>;
+
+	expr_p3<Expr> = (
+		(
+			-<token(TokenTy::Minus)>
+			expr_p3|<|v| Expr::Neg(v.into())>
+		) / expr_p4
+	);
+
+	expr_p4<Expr> =
+		expr_call /
+		expr_literal /
+		expr_variable /
+		(
+			-<token(TokenTy::LParen)>
+			expr_p0
+			-<token(TokenTy::RParen)>
+		);
+
+	expr_call<Expr> = (
+		<token(TokenTy::Identifier)>
+		-<token(TokenTy::LParen)>
+		<separated_list1(token(TokenTy::Comma), expr)>
+		-<token(TokenTy::RParen)>
+	)|<map_expr_call>;
+	expr_literal<Expr> =
+		<token(TokenTy::Literal)>|<map_expr_literal>;
+	expr_variable<Expr> =
+		<token(TokenTy::Identifier)>|<map_expr_variable>;
 "#);
 
 fn token(ty: TokenTy) -> impl Fn(Tokens) -> nom::IResult<Tokens, &Token> {
@@ -184,11 +236,47 @@ fn map_for_loop((variable, start, end, body): (&Token, &Token, &Token, Vec<Top>)
 	}
 }
 
-fn map_literal(token: &Token) -> Expr {
+fn fold_expr((lhs, rhs): (Expr, Option<(&Token, Expr)>)) -> Expr {
+	match rhs {
+		None => lhs,
+		Some((op, rhs)) => {
+			let lhs = lhs.into();
+			let rhs = rhs.into();
+			match op {
+				Token::Plus => Expr::Add(lhs, rhs),
+				Token::Minus => Expr::Sub(lhs, rhs),
+				Token::Asterisk => Expr::Mul(lhs, rhs),
+				Token::Slash => Expr::Div(lhs, rhs),
+				Token::Caret => Expr::Pow(lhs, rhs),
+				_ => unreachable!("parsed operator token but trying to fold different token"),
+			}
+		}
+	}
+}
+
+fn map_expr_call((func, args): (&Token, Vec<Expr>)) -> Expr {
+	let Token::Identifier(function) = func else {
+		unreachable!("parsed identifier but getting different token")
+	};
+	let function = function.clone();
+	Expr::Call {
+		function,
+		args,
+	}
+}
+
+fn map_expr_literal(token: &Token) -> Expr {
 	let &Token::Literal(value) = token else {
 		unreachable!("parsed literal but getting different token")
 	};
 	Expr::Value(value)
+}
+
+fn map_expr_variable(token: &Token) -> Expr {
+	let Token::Identifier(name) = token else {
+		unreachable!("parsed identifier but getting different token")
+	};
+	Expr::Variable(name.clone())
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -242,18 +330,12 @@ impl<'a> nom::Input for Tokens<'a> {
 #[test]
 fn ree() {
 	let inp = r#"
-		var a;
-		var b;
-		func 1;
-		func 2;
-		for x = 0, 3 {
-			func 3;
-		}
+		func a + 42 * -b ^ foo(42, 32);
 	"#;
 	let inp = crate::lexer::lex(inp).unwrap();
 	dbg!(&inp);
 	let parsed = parse(&inp).unwrap();
-	// let parsed = for_loop.parse(Tokens(&inp)).unwrap();
+	// let (_, (parsed, _)) = (expr, eof).parse_complete(Tokens(&inp)).unwrap();
 	dbg!(parsed);
 
 	panic!("skree");
