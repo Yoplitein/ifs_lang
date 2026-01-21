@@ -1,19 +1,34 @@
-use std::{iter::Enumerate, slice::Iter};
+use std::{collections::HashMap, iter::Enumerate, ops::Range, slice::Iter};
 
 use nbnf::nom::{self, combinator::eof, error::FromExternalError};
 use strum::IntoDiscriminant;
 
 use crate::{AResult, lexer::{Token, TokenTy, Value}};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Module {
 	pub variables: Vec<String>,
-	pub functions: Vec<Expr>,
+	pub functions: Vec<Function>,
 }
 
 #[derive(Debug)]
+pub struct Function {
+	pub constants: HashMap<String, Value>,
+	pub body: Expr,
+}
+
+impl Function {
+	fn new(body: Expr) -> Self {
+		Self {
+			constants: HashMap::new(),
+			body,
+		}
+	}
+}
+
+#[derive(Clone, Debug)]
 pub enum Expr {
-	Literal(Value),
+	Value(Value),
 	Variable(String),
 
 	Add(Box<Self>, Box<Self>),
@@ -37,11 +52,54 @@ pub fn parse(input: &[Token]) -> AResult<Module> {
 	Ok(result)
 }
 
+#[derive(Debug)]
+enum Top {
+	VarDecl(String),
+	Func(Expr),
+	ForLoop {
+		variable: String,
+		range: Range<Value>,
+		body: Vec<Top>,
+	}
+}
+
 nbnf::nbnf!(r#"
 	#input <Tokens>
 	#output <!>
 
-	top<Module> = -<token(TokenTy::Var)> <token(TokenTy::Identifier)>|<map_mod> -<token(TokenTy::Semicolon)> -eof;
+	top<Module> =
+		(
+			var_decl /
+			func /
+			for_loop
+		)+|<unwrap_top>
+		-eof;
+	
+	var_decl<Top> =
+		-<token(TokenTy::Var)>
+		<token(TokenTy::Identifier)>|<map_var_decl>
+		-<token(TokenTy::Semicolon)>;
+	
+	for_loop<Top> = (
+		-<token(TokenTy::For)>
+		<token(TokenTy::Identifier)>
+		-<token(TokenTy::Equals)>
+		<token(TokenTy::Literal)>
+		-<token(TokenTy::Comma)>
+		// TODO: optional step value
+		<token(TokenTy::Literal)>
+		-<token(TokenTy::LBrace)>
+		func+
+		-<token(TokenTy::RBrace)>
+	)|<map_for_loop>;
+	
+	func<Top> =
+		-<token(TokenTy::Func)>
+		expr|<Top::Func>
+		-<token(TokenTy::Semicolon)>;
+	
+	expr<Expr> =
+		<token(TokenTy::Literal)>|<map_literal>;
 "#);
 
 fn token(ty: TokenTy) -> impl Fn(Tokens) -> nom::IResult<Tokens, &Token> {
@@ -49,7 +107,7 @@ fn token(ty: TokenTy) -> impl Fn(Tokens) -> nom::IResult<Tokens, &Token> {
 		let (rest, token) = nom::bytes::complete::take(1usize).parse(input)?;
 		let token = &token.0[0];
 		if token.discriminant() != ty {
-			return Err(nom::Err::Failure(nom::error::Error::from_external_error(
+			return Err(nom::Err::Error(nom::error::Error::from_external_error(
 				input,
 				nom::error::ErrorKind::MapRes,
 				format!("expected token {ty:?} but got {:?}", token.discriminant()),
@@ -59,12 +117,78 @@ fn token(ty: TokenTy) -> impl Fn(Tokens) -> nom::IResult<Tokens, &Token> {
 	}
 }
 
-fn map_mod(ident: &Token) -> Module {
-	let Token::Identifier(v) = ident else { unreachable!() };
-	Module {
-		variables: vec![v.clone()],
-		functions: vec![],
+fn unwrap_top(nodes: Vec<Top>) -> Module {
+	let mut module = Module::default();
+	for node in nodes {
+		match node {
+			Top::VarDecl(name) => module.variables.push(name),
+			Top::Func(body) => module.functions.push(Function::new(body)),
+			Top::ForLoop { variable, range, body: inner } => {
+				let Value::Real(mut value) = range.start else {
+					// FIXME: propagate via result
+					panic!("for loop start cannot be complex")
+				};
+				let Value::Real(end) = range.end else {
+					panic!("for loop end cannot be complex")
+				};
+				// TODO: user-specified step value
+				let step = 1.0;
+				while value < end {
+					let constants = HashMap::from_iter([(
+						variable.clone(),
+						Value::Real(value),
+					)]);
+					for body in &inner {
+						let constants = constants.clone();
+						let Top::Func(body) = body else {
+							panic!("FIXME: permit nested loops etc")
+						};
+						// TODO: slap in an Arc?
+						let body = body.clone();
+						module.functions.push(Function {
+							constants,
+							body,
+						})
+					}
+					value += step;
+				}
+			},
+		}
 	}
+	module
+}
+
+fn map_var_decl(token: &Token) -> Top {
+	let Token::Identifier(name) = token else {
+		unreachable!("parsed identifier but getting different token")
+	};
+	Top::VarDecl(name.clone())
+}
+
+fn map_for_loop((variable, start, end, body): (&Token, &Token, &Token, Vec<Top>)) -> Top {
+	let Token::Identifier(variable) = variable else {
+		unreachable!("parsed identifier but getting different token")
+	};
+	let variable = variable.clone();
+	let Token::Literal(start) = start else {
+		unreachable!("parsed literal but getting different token")
+	};
+	let Token::Literal(end) = end else {
+		unreachable!("parsed literal but getting different token")
+	};
+	let range = *start .. *end;
+	Top::ForLoop {
+		variable,
+		range,
+		body,
+	}
+}
+
+fn map_literal(token: &Token) -> Expr {
+	let &Token::Literal(value) = token else {
+		unreachable!("parsed literal but getting different token")
+	};
+	Expr::Value(value)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -118,11 +242,18 @@ impl<'a> nom::Input for Tokens<'a> {
 #[test]
 fn ree() {
 	let inp = r#"
-		var a
+		var a;
+		var b;
+		func 1;
+		func 2;
+		for x = 0, 3 {
+			func 3;
+		}
 	"#;
 	let inp = crate::lexer::lex(inp).unwrap();
 	dbg!(&inp);
 	let parsed = parse(&inp).unwrap();
+	// let parsed = for_loop.parse(Tokens(&inp)).unwrap();
 	dbg!(parsed);
 
 	panic!("skree");
