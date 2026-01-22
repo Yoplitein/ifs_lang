@@ -75,27 +75,11 @@ nbnf::nbnf!(
 
 	identifier<String> = -![0-9] ([a-zA-Z0-9]+)|<String::from_iter>;
 
-	literal<Value> = literal_complex / literal_real;
 	scalar<&str> = ~([0-9]+ '.' [0-9]+) / ~([0-9]+);
 "#
 );
 
-fn literal_real(input: &str) -> nom::IResult<&str, Value> {
-	let (rest, re) = scalar.parse(input)?;
-	let re = match re.parse::<f64>() {
-		Ok(v) => v,
-		Err(err) => {
-			return Err(nom::Err::Failure(nom::error::Error::from_external_error(
-				input,
-				nom::error::ErrorKind::MapRes,
-				err,
-			)));
-		},
-	};
-	Ok((rest, Value::Real(re)))
-}
-
-fn literal_complex(re_start: &str) -> nom::IResult<&str, Value> {
+fn literal(re_start: &str) -> nom::IResult<&str, Value> {
 	let (rest, re) = scalar.parse(re_start)?;
 	let re = match re.parse::<f64>() {
 		Ok(v) => v,
@@ -108,7 +92,10 @@ fn literal_complex(re_start: &str) -> nom::IResult<&str, Value> {
 		},
 	};
 
-	let (rest, _) = nom::bytes::tag("j").parse(rest)?;
+	let rest = match nom::bytes::tag::<&str, &str, nom::error::Error<&str>>("i").parse(rest) {
+		Ok((rest, _)) => rest,
+		Err(_) => return Ok((rest, Value::Real(re))),
+	};
 
 	let im_start = rest;
 	let (rest, im) = nom::combinator::opt(scalar).parse(rest)?;
