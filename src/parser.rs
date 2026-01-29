@@ -1,5 +1,6 @@
 use std::{collections::HashMap, iter::Enumerate, ops::Range, slice::Iter};
 
+use anyhow::bail;
 use nbnf::nom::{self, combinator::eof, error::FromExternalError, multi::separated_list1};
 use strum::IntoDiscriminant;
 
@@ -64,24 +65,59 @@ enum Top {
 	},
 }
 
+impl Top {
+	fn fold(&self, module: &mut Module, constants: &mut HashMap<String, Value>) -> AResult<()> {
+		match self {
+			Top::VarDecl(name) => module.variables.push(name.clone()),
+			Top::Func(expr) => module.functions.push(Function {
+				constants: constants.clone(),
+				body: expr.clone(),
+			}),
+			Top::ForLoop {
+				variable,
+				range,
+				body,
+			} => {
+				let (Value::Real(mut value), Value::Real(end)) = (range.start, range.end) else {
+					bail!("for loop start/end cannot be complex")
+				};
+				// TODO: user-specified step value
+				let step = 1.0;
+				while value < end {
+					if constants.contains_key(variable) {
+						bail!("redefinition of constant `{}`", variable);
+					}
+					constants.insert(variable.clone(), Value::Real(value));
+					for node in body {
+						node.fold(module, constants)?;
+					}
+					constants.remove(variable);
+					value += step;
+				}
+			},
+		}
+		Ok(())
+	}
+}
+
 nbnf::nbnf!(
 	r#"
 	#input <Tokens>
 	#output <!>
 
 	top<Module> =
-		(
+		!!((
 			var_decl /
 			func /
 			for_loop
-		)+|<unwrap_top>
+		)+|!<fold_top>)
 		-eof;
-	
+
 	var_decl<Top> =
 		-<token(TokenTy::Var)>
 		<token(TokenTy::Identifier)>|<map_var_decl>
 		-<token(TokenTy::Semicolon)>;
-	
+
 	for_loop<Top> = (
 		-<token(TokenTy::For)>
 		<token(TokenTy::Identifier)>
@@ -91,15 +127,15 @@ nbnf::nbnf!(
 		// TODO: optional step value
 		<token(TokenTy::Literal)>
 		-<token(TokenTy::LBrace)>
-		func+
+		(func / for_loop)+
 		-<token(TokenTy::RBrace)>
 	)|<map_for_loop>;
-	
+
 	func<Top> =
 		-<token(TokenTy::Func)>
 		expr|<Top::Func>
 		-<token(TokenTy::Semicolon)>;
-	
+
 	expr<Expr> = expr_p0;
 
 	expr_p0<Expr> = (
@@ -177,43 +213,13 @@ fn token(ty: TokenTy) -> impl Fn(Tokens) -> nom::IResult<Tokens, &Token> {
 	}
 }
 
-fn unwrap_top(nodes: Vec<Top>) -> Module {
+fn fold_top(nodes: Vec<Top>) -> AResult<Module> {
 	let mut module = Module::default();
+	let mut constants = HashMap::new();
 	for node in nodes {
-		match node {
-			Top::VarDecl(name) => module.variables.push(name),
-			Top::Func(body) => module.functions.push(Function::new(body)),
-			Top::ForLoop {
-				variable,
-				range,
-				body: inner,
-			} => {
-				let Value::Real(mut value) = range.start else {
-					// FIXME: propagate via result
-					panic!("for loop start cannot be complex")
-				};
-				let Value::Real(end) = range.end else {
-					panic!("for loop end cannot be complex")
-				};
-				// TODO: user-specified step value
-				let step = 1.0;
-				while value < end {
-					let constants = HashMap::from_iter([(variable.clone(), Value::Real(value))]);
-					for body in &inner {
-						let constants = constants.clone();
-						let Top::Func(body) = body else {
-							panic!("FIXME: permit nested loops etc")
-						};
-						// TODO: slap in an Arc?
-						let body = body.clone();
-						module.functions.push(Function { constants, body })
-					}
-					value += step;
-				}
-			},
-		}
+		node.fold(&mut module, &mut constants)?;
 	}
-	module
+	Ok(module)
 }
 
 fn map_var_decl(token: &Token) -> Top {
@@ -334,7 +340,11 @@ impl<'a> nom::Input for Tokens<'a> {
 #[test]
 fn ree() {
 	let inp = r#"
-		func a + 42 * -b ^ foo(42, 32);
+		for x = 0, 2 {
+			for y = 0, 2 {
+				func x + y;
+			}
+		}
 	"#;
 	let inp = crate::lexer::lex(inp).unwrap();
 	dbg!(&inp);
