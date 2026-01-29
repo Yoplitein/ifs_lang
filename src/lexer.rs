@@ -43,8 +43,8 @@ pub fn lex(input: &str) -> AResult<Vec<Token>> {
 	Ok(result)
 }
 
-nbnf::nbnf!(
-	r#"
+#[rustfmt::skip]
+nbnf::nbnf!(r#"
 	// each rule should explicitly define output
 	#output <!>
 
@@ -76,8 +76,7 @@ nbnf::nbnf!(
 	identifier<String> = -![0-9] ([a-zA-Z0-9]+)|<String::from_iter>;
 
 	scalar<&str> = ~([0-9]+ '.' [0-9]+) / ~([0-9]+);
-"#
-);
+"#);
 
 fn literal(re_start: &str) -> nom::IResult<&str, Value> {
 	let (rest, re) = scalar.parse(re_start)?;

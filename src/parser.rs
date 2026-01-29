@@ -100,8 +100,8 @@ impl Top {
 	}
 }
 
-nbnf::nbnf!(
-	r#"
+#[rustfmt::skip]
+nbnf::nbnf!(r#"
 	#input <Tokens>
 	#output <!>
 
@@ -195,8 +195,7 @@ nbnf::nbnf!(
 		<token(TokenTy::Literal)>|<map_expr_literal>;
 	expr_variable<Expr> =
 		<token(TokenTy::Identifier)>|<map_expr_variable>;
-"#
-);
+"#);
 
 fn token(ty: TokenTy) -> impl Fn(Tokens) -> nom::IResult<Tokens, &Token> {
 	move |input: Tokens| -> nom::IResult<Tokens, &Token> {
