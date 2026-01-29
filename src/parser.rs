@@ -38,11 +38,29 @@ pub enum Expr {
 
 pub fn parse(input: &[Token]) -> AResult<Module> {
 	let input = Tokens(input);
-	let (rest, result) = top
+	let (rest, nodes) = top
 		.parse_complete(input)
 		.map_err(|err| anyhow::anyhow!("parser failed: {err}"))?;
 	debug_assert!(rest.0.is_empty());
-	Ok(result)
+
+	let mut module = Module::default();
+	let mut constants = HashMap::new();
+	for node in nodes {
+		node.fold(&mut module, &mut constants)?;
+	}
+
+	for func in &module.functions {
+		for variable in &module.variables {
+			if func.constants.contains_key(variable) {
+				bail!(
+					"invalid module: symbol `{variable}` is defined as both a variable and a \
+					 constant"
+				);
+			}
+		}
+	}
+
+	Ok(module)
 }
 
 #[derive(Debug)]
@@ -106,13 +124,13 @@ nbnf::nbnf!(r#"
 	#input <Tokens>
 	#output <!>
 
-	top<Module> =
-		!!((
+	top<Vec<Top>> =
+		(
 			var_decl /
 			const_decl /
 			func /
 			for_loop
-		)+|!<fold_top>)
+		)+
 		-eof;
 
 	var_decl<Top> =
@@ -220,27 +238,6 @@ fn token(ty: TokenTy) -> impl Fn(Tokens) -> nom::IResult<Tokens, &Token> {
 		}
 		Ok((rest, token))
 	}
-}
-
-fn fold_top(nodes: Vec<Top>) -> AResult<Module> {
-	let mut module = Module::default();
-	let mut constants = HashMap::new();
-	for node in nodes {
-		node.fold(&mut module, &mut constants)?;
-	}
-
-	for func in &module.functions {
-		for variable in &module.variables {
-			if func.constants.contains_key(variable) {
-				bail!(
-					"invalid module: symbol `{variable}` is defined as both a variable and a \
-					 constant"
-				);
-			}
-		}
-	}
-
-	Ok(module)
 }
 
 fn map_var_decl(variable: &Token) -> Top {
