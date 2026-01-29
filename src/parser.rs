@@ -21,15 +21,6 @@ pub struct Function {
 	pub body: Expr,
 }
 
-impl Function {
-	fn new(body: Expr) -> Self {
-		Self {
-			constants: HashMap::new(),
-			body,
-		}
-	}
-}
-
 #[derive(Clone, Debug)]
 pub enum Expr {
 	Value(Value),
@@ -57,6 +48,10 @@ pub fn parse(input: &[Token]) -> AResult<Module> {
 #[derive(Debug)]
 enum Top {
 	VarDecl(String),
+	ConstDecl {
+		variable: String,
+		value: Value,
+	},
 	Func(Expr),
 	ForLoop {
 		variable: String,
@@ -69,6 +64,12 @@ impl Top {
 	fn fold(&self, module: &mut Module, constants: &mut HashMap<String, Value>) -> AResult<()> {
 		match self {
 			Top::VarDecl(name) => module.variables.push(name.clone()),
+			Top::ConstDecl { variable, value } => {
+				if constants.contains_key(variable) {
+					bail!("redefinition of constant `{}`", variable);
+				}
+				constants.insert(variable.clone(), value.clone());
+			},
 			Top::Func(expr) => module.functions.push(Function {
 				constants: constants.clone(),
 				body: expr.clone(),
@@ -108,6 +109,7 @@ nbnf::nbnf!(r#"
 	top<Module> =
 		!!((
 			var_decl /
+			const_decl /
 			func /
 			for_loop
 		)+|!<fold_top>)
@@ -117,6 +119,14 @@ nbnf::nbnf!(r#"
 		-<token(TokenTy::Var)>
 		<token(TokenTy::Identifier)>|<map_var_decl>
 		-<token(TokenTy::Semicolon)>;
+
+	const_decl<Top> = (
+		-<token(TokenTy::Const)>
+		<token(TokenTy::Identifier)>
+		-<token(TokenTy::Equals)>
+		<token(TokenTy::Literal)>
+		-<token(TokenTy::Semicolon)>
+	)|<map_const_decl>;
 
 	for_loop<Top> = (
 		-<token(TokenTy::For)>
@@ -221,11 +231,21 @@ fn fold_top(nodes: Vec<Top>) -> AResult<Module> {
 	Ok(module)
 }
 
-fn map_var_decl(token: &Token) -> Top {
-	let Token::Identifier(name) = token else {
+fn map_var_decl(variable: &Token) -> Top {
+	let Token::Identifier(variable) = variable else {
 		unreachable!("parsed identifier but getting different token")
 	};
-	Top::VarDecl(name.clone())
+	Top::VarDecl(variable.clone())
+}
+
+fn map_const_decl((variable, value): (&Token, &Token)) -> Top {
+	let Token::Identifier(variable) = variable.clone() else {
+		unreachable!("parsed identifier but getting different token")
+	};
+	let Token::Literal(value) = *value else {
+		unreachable!("parsed literal but getting different token")
+	};
+	Top::ConstDecl { variable, value }
 }
 
 fn map_for_loop((variable, start, end, body): (&Token, &Token, &Token, Vec<Top>)) -> Top {
@@ -339,9 +359,10 @@ impl<'a> nom::Input for Tokens<'a> {
 #[test]
 fn ree() {
 	let inp = r#"
+		const z = 42;
 		for x = 0, 2 {
-			for y = 0, 2 {
-				func x + y;
+			for y = -2, 0 {
+				func x + y + z;
 			}
 		}
 	"#;
