@@ -156,7 +156,7 @@ nbnf::nbnf!(r#"
 				<token(TokenTy::Minus)>
 			)
 			expr_p1
-		)?
+		)*
 	)|<fold_expr>;
 
 	expr_p1<Expr> = (
@@ -167,7 +167,7 @@ nbnf::nbnf!(r#"
 				<token(TokenTy::Slash)>
 			)
 			expr_p2
-		)?
+		)*
 	)|<fold_expr>;
 
 	expr_p2<Expr> = (
@@ -175,7 +175,7 @@ nbnf::nbnf!(r#"
 		(
 			<token(TokenTy::Caret)>
 			expr_p2
-		)?
+		)*
 	)|<fold_expr>;
 
 	expr_p3<Expr> = (
@@ -267,22 +267,21 @@ fn map_for_loop((variable, start, end, body): (&Token, &Token, &Token, Vec<Top>)
 	}
 }
 
-fn fold_expr((lhs, rhs): (Expr, Option<(&Token, Expr)>)) -> Expr {
-	match rhs {
-		None => lhs,
-		Some((op, rhs)) => {
-			let lhs = lhs.into();
-			let rhs = rhs.into();
-			match op {
-				Token::Plus => Expr::Add(lhs, rhs),
-				Token::Minus => Expr::Sub(lhs, rhs),
-				Token::Asterisk => Expr::Mul(lhs, rhs),
-				Token::Slash => Expr::Div(lhs, rhs),
-				Token::Caret => Expr::Pow(lhs, rhs),
-				_ => unreachable!("parsed operator token but trying to fold different token"),
-			}
-		},
+fn fold_expr((lhs, rhs): (Expr, Vec<(&Token, Expr)>)) -> Expr {
+	let mut top = lhs;
+	for (op, rhs) in rhs {
+		let lhs = top.into();
+		let rhs = rhs.into();
+		top = match op {
+			Token::Plus => Expr::Add(lhs, rhs),
+			Token::Minus => Expr::Sub(lhs, rhs),
+			Token::Asterisk => Expr::Mul(lhs, rhs),
+			Token::Slash => Expr::Div(lhs, rhs),
+			Token::Caret => Expr::Pow(lhs, rhs),
+			_ => unreachable!("parsed operator token but trying to fold expr with different token"),
+		};
 	}
+	top
 }
 
 fn map_expr_call((func, args): (&Token, Vec<Expr>)) -> Expr {
