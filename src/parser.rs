@@ -228,6 +228,18 @@ fn fold_top(nodes: Vec<Top>) -> AResult<Module> {
 	for node in nodes {
 		node.fold(&mut module, &mut constants)?;
 	}
+
+	for func in &module.functions {
+		for variable in &module.variables {
+			if func.constants.contains_key(variable) {
+				bail!(
+					"invalid module: symbol `{variable}` is defined as both a variable and a \
+					 constant"
+				);
+			}
+		}
+	}
+
 	Ok(module)
 }
 
@@ -358,12 +370,9 @@ impl<'a> nom::Input for Tokens<'a> {
 #[test]
 fn ree() {
 	let inp = r#"
-		const z = 42;
-		for x = 0, 2 {
-			for y = -2, 0 {
-				func x + y + z;
-			}
-		}
+		var a;
+		const a = 1;
+		func a;
 	"#;
 	let inp = crate::lexer::lex(inp).unwrap();
 	dbg!(&inp);
