@@ -51,6 +51,9 @@ nbnf::nbnf!(r#"
 	top<Vec<Token>> = (-whitespace token -whitespace)* -eof;
 	whitespace<()> = ([ \t\r\n]*)@<()>;
 	token<Token> = (
+		// literals must be parsed first for proper recognition of negative numbers
+		literal|<Token::Literal> /
+
 		"("@<Token::LParen> /
 		")"@<Token::RParen> /
 		"{"@<Token::LBrace> /
@@ -68,14 +71,11 @@ nbnf::nbnf!(r#"
 		"func"@<Token::Func> /
 		"for"@<Token::For> /
 
-		// literals must be parsed first for complex notation
-		literal|<Token::Literal> /
+		// identifiers must be parsed after keywords
 		identifier|<Token::Identifier>
 	);
-
 	identifier<String> = -![0-9] ([a-zA-Z0-9]+)|<String::from_iter>;
-
-	scalar<&str> = ~([0-9]+ '.' [0-9]+) / ~([0-9]+);
+	scalar<&str> = ~('-'? [0-9]+ ('.' [0-9]+)?);
 "#);
 
 fn literal(re_start: &str) -> nom::IResult<&str, Value> {
