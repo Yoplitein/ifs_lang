@@ -2,7 +2,7 @@ use std::{collections::HashMap, iter::Enumerate, ops::Range, slice::Iter};
 
 use anyhow::bail;
 use nbnf::nom::{self, combinator::eof, error::FromExternalError, multi::separated_list1};
-use strum::IntoDiscriminant;
+use strum::{EnumDiscriminants, IntoDiscriminant};
 
 use crate::{
 	AResult,
@@ -15,15 +15,18 @@ pub struct Module {
 	pub functions: Vec<Function>,
 }
 
+pub type VariableMap = HashMap<String, Value>;
+
 #[derive(Debug)]
 pub struct Function {
-	pub constants: HashMap<String, Value>,
+	pub constants: VariableMap,
 	pub body: Expr,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, EnumDiscriminants)]
+#[strum_discriminants(name(ExprTy))]
 pub enum Expr {
-	Value(Value),
+	Constant(Value),
 	Variable(String),
 
 	Add(Box<Self>, Box<Self>),
@@ -79,7 +82,7 @@ enum Top {
 }
 
 impl Top {
-	fn fold(&self, module: &mut Module, constants: &mut HashMap<String, Value>) -> AResult<()> {
+	fn fold(&self, module: &mut Module, constants: &mut VariableMap) -> AResult<()> {
 		match self {
 			Top::VarDecl(name) => module.variables.push(name.clone()),
 			Top::ConstDecl { variable, value } => {
@@ -305,7 +308,7 @@ fn map_expr_literal(token: &Token) -> Expr {
 	let &Token::Literal(value) = token else {
 		unreachable!("parsed literal but getting different token")
 	};
-	Expr::Value(value)
+	Expr::Constant(value)
 }
 
 fn map_expr_variable(token: &Token) -> Expr {
