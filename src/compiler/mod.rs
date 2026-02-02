@@ -102,28 +102,51 @@ impl Expr {
 	/// resulting value.
 	pub fn fold_constants(&mut self) {
 		match self {
-			Expr::Add(l, r) if l.is_constant() && r.is_constant() => {
-				let (l, r) = (l.into_value(), r.into_value());
-				*self = Self::Constant(l + r);
+			Expr::Add(l, r) => {
+				l.fold_constants();
+				r.fold_constants();
+				if l.is_constant() && r.is_constant() {
+					let (l, r) = (l.into_value(), r.into_value());
+					*self = Self::Constant(l + r);
+				}
 			},
-			Expr::Sub(l, r) if l.is_constant() && r.is_constant() => {
-				let (l, r) = (l.into_value(), r.into_value());
-				*self = Self::Constant(l - r);
+			Expr::Sub(l, r) => {
+				l.fold_constants();
+				r.fold_constants();
+				if l.is_constant() && r.is_constant() {
+					let (l, r) = (l.into_value(), r.into_value());
+					*self = Self::Constant(l - r);
+				}
 			},
-			Expr::Mul(l, r) if l.is_constant() && r.is_constant() => {
-				let (l, r) = (l.into_value(), r.into_value());
-				*self = Self::Constant(l * r);
+			Expr::Mul(l, r) => {
+				l.fold_constants();
+				r.fold_constants();
+				if l.is_constant() && r.is_constant() {
+					let (l, r) = (l.into_value(), r.into_value());
+					*self = Self::Constant(l * r);
+				}
 			},
-			Expr::Div(l, r) if l.is_constant() && r.is_constant() => {
-				let (l, r) = (l.into_value(), r.into_value());
-				*self = Self::Constant(l / r);
+			Expr::Div(l, r) => {
+				l.fold_constants();
+				r.fold_constants();
+				if l.is_constant() && r.is_constant() {
+					let (l, r) = (l.into_value(), r.into_value());
+					*self = Self::Constant(l / r);
+				}
 			},
-			Expr::Pow(l, r) if l.is_constant() && r.is_constant() => {
-				let (l, r) = (l.into_value(), r.into_value());
-				*self = Self::Constant(l.pow(r));
+			Expr::Pow(l, r) => {
+				l.fold_constants();
+				r.fold_constants();
+				if l.is_constant() && r.is_constant() {
+					let (l, r) = (l.into_value(), r.into_value());
+					*self = Self::Constant(l.pow(r));
+				}
 			},
 			Expr::Neg(expr) if expr.is_constant() => todo!(),
-			Expr::Call { .. } => {
+			Expr::Call { args, .. } => {
+				for arg in args {
+					arg.fold_constants();
+				}
 				// MAYBE: eval trig functions etc?
 				// for now just treat as a leaf
 			},
@@ -178,8 +201,9 @@ fn skree() {
 	test!(Value::Complex(Complex::new(2.0, 4.0)), Value::Complex(Complex::new(6.0, 8.0))); */
 
 	let inp = r#"
-		const x = 2;
-		func 1 + x;
+		const a = 3;
+		const b = 5;
+		func sqrt(a ^ 2 + b ^ 2);
 	"#;
 	let tokens = crate::lexer::lex(inp).unwrap();
 	let mut module = crate::parser::parse(&tokens).unwrap();
