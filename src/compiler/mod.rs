@@ -37,7 +37,6 @@ macro_rules! impl_value_op {
 					(Self::Complex(l), Self::Complex(r)) => {
 						Self::Complex(l $op r)
 					},
-					_ => todo!(),
 				}
 			}
 		}
@@ -48,6 +47,17 @@ impl_value_op!(Add, add, +);
 impl_value_op!(Sub, sub, -);
 impl_value_op!(Mul, mul, *);
 impl_value_op!(Div, div, /);
+
+impl std::ops::Neg for Value {
+	type Output = Value;
+
+	fn neg(self) -> Self::Output {
+		match self {
+			Self::Real(v) => Self::Real(-v),
+			Self::Complex(v) => Self::Complex(-v),
+		}
+	}
+}
 
 impl Value {
 	pub fn pow(&self, rhs: Self) -> Self {
@@ -142,7 +152,13 @@ impl Expr {
 					*self = Self::Constant(l.pow(r));
 				}
 			},
-			Expr::Neg(expr) if expr.is_constant() => todo!(),
+			Expr::Neg(expr) => {
+				expr.fold_constants();
+				if expr.is_constant() {
+					let value = expr.into_value();
+					*self = Self::Constant(-value);
+				}
+			},
 			Expr::Call { args, .. } => {
 				for arg in args {
 					arg.fold_constants();
@@ -203,7 +219,7 @@ fn skree() {
 	let inp = r#"
 		const a = 3;
 		const b = 5;
-		func sqrt(a ^ 2 + b ^ 2);
+		func sqrt(-(a ^ 2 + b ^ 2));
 	"#;
 	let tokens = crate::lexer::lex(inp).unwrap();
 	let mut module = crate::parser::parse(&tokens).unwrap();
