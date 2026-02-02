@@ -1,9 +1,13 @@
+mod text;
+
 use num::Complex;
 use strum::IntoDiscriminant;
+pub use text::*;
 
 use crate::{
+	AResult,
 	lexer::Value,
-	parser::{Expr, VariableMap},
+	parser::{Expr, Module, VariableMap},
 };
 
 impl From<f64> for Value {
@@ -197,37 +201,11 @@ impl crate::parser::Function {
 	}
 }
 
-#[test]
-fn skree() {
-	// let q = Expr::Neg(Expr::Constant(Value::Real(1.0)).into());
-	// dbg!(q.is_constant(), q.into_value());
+pub trait Compiler {
+	type Output;
+	type NodeOutput;
 
-	/* macro_rules! test {
-		($l:expr, $r:expr) => {
-			dbg!($l + $r);
-			dbg!($l - $r);
-			dbg!($l * $r);
-			dbg!($l / $r);
-			dbg!($l.pow($r));
-		};
-	}
-	test!(Value::Real(2.0), Value::Real(4.0));
-	test!(Value::Real(2.0), Value::Complex(Complex::new(4.0, 6.0)));
-	test!(Value::Complex(Complex::new(2.0, 4.0)), Value::Real(6.0));
-	test!(Value::Complex(Complex::new(2.0, 4.0)), Value::Complex(Complex::new(6.0, 8.0))); */
+	fn compile_module(&mut self, module: &Module) -> AResult<Self::Output>;
 
-	let inp = r#"
-		const a = 3;
-		const b = 5;
-		func sqrt(-(a ^ 2 + b ^ 2));
-	"#;
-	let tokens = crate::lexer::lex(inp).unwrap();
-	let mut module = crate::parser::parse(&tokens).unwrap();
-	dbg!(&module);
-	module.propagate_constants();
-	dbg!(&module);
-	module.fold_constants();
-	dbg!(&module);
-
-	panic!("skree");
+	fn compile_node(&mut self, expr: &Expr) -> AResult<Self::NodeOutput>;
 }

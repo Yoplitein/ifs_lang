@@ -366,19 +366,3 @@ impl<'a> nom::Input for Tokens<'a> {
 		}
 	}
 }
-
-#[test]
-fn ree() {
-	let inp = r#"
-		var a;
-		const a = 1;
-		func a;
-	"#;
-	let inp = crate::lexer::lex(inp).unwrap();
-	dbg!(&inp);
-	let parsed = parse(&inp).unwrap();
-	// let (_, (parsed, _)) = (expr, eof).parse_complete(Tokens(&inp)).unwrap();
-	dbg!(parsed);
-
-	panic!("skree");
-}
