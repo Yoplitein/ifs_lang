@@ -79,6 +79,7 @@ enum Top {
 	ForLoop {
 		variable: String,
 		range: Range<Value>,
+		step: Option<Value>,
 		body: Vec<Top>,
 	},
 }
@@ -101,13 +102,17 @@ impl Top {
 			Top::ForLoop {
 				variable,
 				range,
+				step,
 				body,
 			} => {
 				let (Value::Real(mut value), Value::Real(end)) = (range.start, range.end) else {
 					bail!("for loop start/end cannot be complex")
 				};
-				// TODO: user-specified step value
-				let step = 1.0;
+				let step = match *step {
+					Some(Value::Real(step)) => step,
+					Some(_) => bail!("for loop step cannot be complex"),
+					None => 1.0,
+				};
 				while value < end {
 					if constants.contains_key(variable) {
 						bail!("redefinition of constant `{}`", variable);
@@ -161,10 +166,14 @@ nbnf::nbnf!(r#"
 		-<token(TokenTy::For)>
 		<token(TokenTy::Identifier)>
 		-<token(TokenTy::Equals)>
-		<token(TokenTy::Literal)>
+
+		<token(TokenTy::Literal)> // min
 		-<token(TokenTy::Comma)>
-		// TODO: optional step value
-		<token(TokenTy::Literal)>
+		<token(TokenTy::Literal)> // max
+		(
+			-<token(TokenTy::Comma)>
+			<token(TokenTy::Literal)> // step
+		)?
 		-<token(TokenTy::LBrace)>
 		(func / for_loop)+
 		-<token(TokenTy::RBrace)>
@@ -278,7 +287,9 @@ fn map_const_decl((variable, value): (&Token, &Token)) -> Top {
 	Top::ConstDecl { variable, value }
 }
 
-fn map_for_loop((variable, start, end, body): (&Token, &Token, &Token, Vec<Top>)) -> Top {
+fn map_for_loop(
+	(variable, start, end, step, body): (&Token, &Token, &Token, Option<&Token>, Vec<Top>),
+) -> Top {
 	let Token::Identifier(variable) = variable else {
 		unreachable!("parsed identifier but getting different token")
 	};
@@ -289,10 +300,17 @@ fn map_for_loop((variable, start, end, body): (&Token, &Token, &Token, Vec<Top>)
 	let Token::Literal(end) = end else {
 		unreachable!("parsed literal but getting different token")
 	};
+	let step = step.map(|step| {
+		let &Token::Literal(step) = step else {
+			unreachable!("parsed literal but getting different token")
+		};
+		step
+	});
 	let range = *start .. *end;
 	Top::ForLoop {
 		variable,
 		range,
+		step,
 		body,
 	}
 }
