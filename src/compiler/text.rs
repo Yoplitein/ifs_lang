@@ -20,7 +20,8 @@ impl<Formatter: ValueFormatter> Default for TextCompiler<Formatter> {
 
 #[derive(Debug)]
 pub struct TextOutput {
-	pub variables: Vec<String>,
+	pub globals: Vec<String>,
+	pub arguments: Vec<String>,
 	pub functions: Vec<String>,
 }
 
@@ -29,13 +30,15 @@ impl<Formatter: ValueFormatter> Compiler for TextCompiler<Formatter> {
 	type Output = TextOutput;
 
 	fn compile_module(&mut self, module: &Module) -> AResult<Self::Output> {
-		let variables = module.variables.clone();
+		let globals = module.globals.clone();
+		let arguments = module.arguments.clone();
 		let mut functions = Vec::with_capacity(module.functions.len());
 		for function in &module.functions {
 			functions.push(self.compile_node(&function.body)?);
 		}
 		Ok(TextOutput {
-			variables,
+			globals,
+			arguments,
 			functions,
 		})
 	}

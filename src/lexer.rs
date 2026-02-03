@@ -21,6 +21,7 @@ pub enum Token {
 	Caret,
 
 	Var,
+	Arg,
 	Const,
 	Func,
 	For,
@@ -69,6 +70,7 @@ nbnf::nbnf!(r#"
 		"^"@<Token::Caret> /
 
 		"var"@<Token::Var> /
+		"arg"@<Token::Arg> /
 		"const"@<Token::Const> /
 		"func"@<Token::Func> /
 		"for"@<Token::For> /

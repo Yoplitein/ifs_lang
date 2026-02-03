@@ -11,7 +11,8 @@ use crate::{
 
 #[derive(Debug, Default)]
 pub struct Module {
-	pub variables: Vec<String>,
+	pub globals: Vec<String>,
+	pub arguments: Vec<String>,
 	pub functions: Vec<Function>,
 }
 
@@ -53,7 +54,7 @@ pub fn parse(input: &[Token]) -> AResult<Module> {
 	}
 
 	for func in &module.functions {
-		for variable in &module.variables {
+		for variable in &module.globals {
 			if func.constants.contains_key(variable) {
 				bail!(
 					"invalid module: symbol `{variable}` is defined as both a variable and a \
@@ -68,7 +69,8 @@ pub fn parse(input: &[Token]) -> AResult<Module> {
 
 #[derive(Debug)]
 enum Top {
-	VarDecl(String),
+	VarDecl(Vec<String>),
+	ArgDecl(Vec<String>),
 	ConstDecl {
 		variable: String,
 		value: Value,
@@ -84,7 +86,8 @@ enum Top {
 impl Top {
 	fn fold(&self, module: &mut Module, constants: &mut VariableMap) -> AResult<()> {
 		match self {
-			Top::VarDecl(name) => module.variables.push(name.clone()),
+			Top::VarDecl(names) => module.globals.extend(names.clone()),
+			Top::ArgDecl(names) => module.arguments.extend(names.clone()),
 			Top::ConstDecl { variable, value } => {
 				if constants.contains_key(variable) {
 					bail!("redefinition of constant `{}`", variable);
@@ -129,16 +132,21 @@ nbnf::nbnf!(r#"
 
 	top<Vec<Top>> =
 		(
-			var_decl /
+			var_or_arg_decl /
 			const_decl /
 			func /
 			for_loop
 		)+
 		-eof;
 
-	var_decl<Top> =
-		-<token(TokenTy::Var)>
-		<token(TokenTy::Identifier)>|<map_var_decl>
+	var_or_arg_decl<Top> =
+		(
+			(
+				<token(TokenTy::Var)> /
+				<token(TokenTy::Arg)>
+			)
+			<separated_list1(token(TokenTy::Comma), token(TokenTy::Identifier))>
+		)|<map_var_or_arg_decl>
 		-<token(TokenTy::Semicolon)>;
 
 	const_decl<Top> = (
@@ -243,11 +251,21 @@ fn token(ty: TokenTy) -> impl Fn(Tokens) -> nom::IResult<Tokens, &Token> {
 	}
 }
 
-fn map_var_decl(variable: &Token) -> Top {
-	let Token::Identifier(variable) = variable else {
-		unreachable!("parsed identifier but getting different token")
-	};
-	Top::VarDecl(variable.clone())
+fn map_var_or_arg_decl((decl_ty, names): (&Token, Vec<&Token>)) -> Top {
+	let names = names
+		.into_iter()
+		.map(|name| {
+			let Token::Identifier(name) = name else {
+				unreachable!("parsed identifier but getting different token")
+			};
+			name.clone()
+		})
+		.collect();
+	match decl_ty {
+		Token::Var => Top::VarDecl(names),
+		Token::Arg => Top::ArgDecl(names),
+		_ => unreachable!("parsed Var/Arg but getting different token"),
+	}
 }
 
 fn map_const_decl((variable, value): (&Token, &Token)) -> Top {
