@@ -77,7 +77,9 @@ enum Top {
 	},
 	Func(Expr),
 	ForLoop {
-		variable: String,
+		iterant: String,
+		start_end_consts: Option<(String, String)>,
+		step_const: Option<String>,
 		range: Range<Value>,
 		step: Option<Value>,
 		body: Vec<Top>,
@@ -100,29 +102,59 @@ impl Top {
 				body: expr.clone(),
 			}),
 			Top::ForLoop {
-				variable,
+				iterant,
+				start_end_consts,
+				step_const,
 				range,
 				step,
 				body,
 			} => {
-				let (Value::Real(mut value), Value::Real(end)) = (range.start, range.end) else {
+				let (Value::Real(start), Value::Real(end)) = (range.start, range.end) else {
 					bail!("for loop start/end cannot be complex")
 				};
+				let mut value = start;
+
 				let step = match *step {
 					Some(Value::Real(step)) => step,
 					Some(_) => bail!("for loop step cannot be complex"),
 					None => 1.0,
 				};
-				while value < end {
-					if constants.contains_key(variable) {
-						bail!("redefinition of constant `{}`", variable);
+				if let Some(name) = step_const {
+					if constants.contains_key(name) {
+						bail!("redefinition of constant `{}`", iterant);
 					}
-					constants.insert(variable.clone(), Value::Real(value));
+					constants.insert(name.clone(), Value::Real(step));
+				}
+
+				while value < end {
+					if constants.contains_key(iterant) {
+						bail!("redefinition of constant `{}`", iterant);
+					}
+					constants.insert(iterant.clone(), Value::Real(value));
+					if let Some((start_name, end_name)) = start_end_consts {
+						if constants.contains_key(start_name) {
+							bail!("redefinition of constant `{}`", start_name);
+						}
+						constants.insert(start_name.clone(), Value::Real(start));
+
+						if constants.contains_key(end_name) {
+							bail!("redefinition of constant `{}`", end_name);
+						}
+						constants.insert(end_name.clone(), Value::Real(end));
+					}
 					for node in body {
 						node.fold(module, constants)?;
 					}
-					constants.remove(variable);
+					if let Some((start_name, end_name)) = start_end_consts {
+						constants.remove(start_name);
+						constants.remove(end_name);
+					}
+					constants.remove(iterant);
 					value += step;
+				}
+
+				if let Some(name) = step_const {
+					constants.remove(name);
 				}
 			},
 		}
@@ -164,16 +196,31 @@ nbnf::nbnf!(r#"
 
 	for_loop<Top> = (
 		-<token(TokenTy::For)>
-		<token(TokenTy::Identifier)>
+
+		<token(TokenTy::Identifier)> // iterant
+		(
+			-<token(TokenTy::Comma)>
+			<token(TokenTy::Identifier)> // start const
+
+			-<token(TokenTy::Comma)>
+			<token(TokenTy::Identifier)> // end const
+
+			(
+				-<token(TokenTy::Comma)>
+				<token(TokenTy::Identifier)> // step const
+			)?
+		)?
+
 		-<token(TokenTy::Equals)>
 
-		<token(TokenTy::Literal)> // min
+		<token(TokenTy::Literal)> // start
 		-<token(TokenTy::Comma)>
-		<token(TokenTy::Literal)> // max
+		<token(TokenTy::Literal)> // end
 		(
 			-<token(TokenTy::Comma)>
 			<token(TokenTy::Literal)> // step
 		)?
+
 		-<token(TokenTy::LBrace)>
 		(func / for_loop)+
 		-<token(TokenTy::RBrace)>
@@ -288,27 +335,53 @@ fn map_const_decl((variable, value): (&Token, &Token)) -> Top {
 }
 
 fn map_for_loop(
-	(variable, start, end, step, body): (&Token, &Token, &Token, Option<&Token>, Vec<Top>),
+	(iterant, const_names, start, end, step, body): (
+		&Token,
+		Option<(&Token, &Token, Option<&Token>)>,
+		&Token,
+		&Token,
+		Option<&Token>,
+		Vec<Top>,
+	),
 ) -> Top {
-	let Token::Identifier(variable) = variable else {
-		unreachable!("parsed identifier but getting different token")
+	fn unwrap_ident(token: &Token) -> String {
+		let Token::Identifier(str) = token else {
+			unreachable!("parsed identifier but getting different token")
+		};
+		str.clone()
+	}
+
+	let iterant = unwrap_ident(iterant);
+
+	let (start_end_consts, step_const) = match const_names {
+		Some((start, end, step)) => {
+			let start = unwrap_ident(start);
+			let end = unwrap_ident(end);
+			let step = step.map(unwrap_ident);
+			(Some((start, end)), step)
+		},
+		None => (None, None),
 	};
-	let variable = variable.clone();
+
 	let Token::Literal(start) = start else {
 		unreachable!("parsed literal but getting different token")
 	};
 	let Token::Literal(end) = end else {
 		unreachable!("parsed literal but getting different token")
 	};
+	let range = *start .. *end;
+
 	let step = step.map(|step| {
 		let &Token::Literal(step) = step else {
 			unreachable!("parsed literal but getting different token")
 		};
 		step
 	});
-	let range = *start .. *end;
+
 	Top::ForLoop {
-		variable,
+		iterant,
+		start_end_consts,
+		step_const,
 		range,
 		step,
 		body,
