@@ -1,9 +1,13 @@
 mod text;
+#[cfg(feature = "wasm")]
+mod wasm;
 
 use num::Complex;
 use strum::IntoDiscriminant;
-pub use text::*;
 
+pub use self::text::*;
+#[cfg(feature = "wasm")]
+pub use self::wasm::*;
 use crate::{
 	AResult,
 	lexer::Value,
@@ -205,7 +209,7 @@ pub trait Compiler {
 	type Output;
 	type NodeOutput;
 
-	fn compile_module(&mut self, module: &Module) -> AResult<Self::Output>;
+	fn compile_module(self, module: &Module) -> AResult<Self::Output>;
 
 	fn compile_node(&mut self, expr: &Expr) -> AResult<Self::NodeOutput>;
 }

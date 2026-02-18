@@ -29,7 +29,7 @@ impl<Formatter: ValueFormatter> Compiler for TextCompiler<Formatter> {
 	type NodeOutput = String;
 	type Output = TextOutput;
 
-	fn compile_module(&mut self, module: &Module) -> AResult<Self::Output> {
+	fn compile_module(mut self, module: &Module) -> AResult<Self::Output> {
 		let globals = module.globals.clone();
 		let arguments = module.arguments.clone();
 		let mut functions = Vec::with_capacity(module.functions.len());
