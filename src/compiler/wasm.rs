@@ -12,6 +12,7 @@ use crate::{
 
 pub struct WasmCompiler {
 	global_indices: HashMap<String, u32>,
+	argument_indices: HashMap<String, u32>,
 	current_function: wasm_encoder::Function,
 }
 
@@ -19,6 +20,7 @@ impl Default for WasmCompiler {
 	fn default() -> Self {
 		Self {
 			global_indices: HashMap::new(),
+			argument_indices: HashMap::new(),
 			current_function: wasm_encoder::Function::new(vec![]),
 		}
 	}
@@ -26,7 +28,7 @@ impl Default for WasmCompiler {
 
 pub struct WasmOutput {
 	pub global_indices: HashMap<String, u32>,
-	pub arguments: Vec<String>,
+	pub argument_indices: HashMap<String, u32>,
 	pub wasm_module: Vec<u8>,
 }
 
@@ -79,6 +81,12 @@ impl Compiler for WasmCompiler {
 			[wasm_encoder::ValType::V128],
 		);
 
+		for (index, name) in module.arguments.iter().enumerate() {
+			let None = self.argument_indices.insert(name.clone(), index as _) else {
+				anyhow::bail!("argument {name:?} defined more than once");
+			};
+		}
+
 		for (index, func) in module.functions.iter().enumerate() {
 			self.compile_node(&func.body)?;
 			let mut compiled_func = std::mem::replace(
@@ -99,11 +107,11 @@ impl Compiler for WasmCompiler {
 		}
 
 		let global_indices = self.global_indices;
-		let arguments = module.arguments.clone();
+		let argument_indices = self.argument_indices;
 		let wasm_module = wasm_module.finish();
 		let output = WasmOutput {
 			global_indices,
-			arguments,
+			argument_indices,
 			wasm_module,
 		};
 		Ok(output)
@@ -123,10 +131,13 @@ impl Compiler for WasmCompiler {
 				self.current_function.instructions().v128_const(literal);
 			},
 			Expr::Variable(name) => {
-				let Some(&index) = self.global_indices.get(name) else {
-					anyhow::bail!("reading undefined global {name:?}")
+				if let Some(&index) = self.global_indices.get(name)  {
+					self.current_function.instructions().global_get(index);
+				} else if let Some(&index) = self.argument_indices.get(name) {
+					self.current_function.instructions().local_get(index);
+				} else {
+					anyhow::bail!("trying to read undefined variable {name:?}")
 				};
-				self.current_function.instructions().global_get(index);
 			},
 			Expr::Add(l, r) |
 			Expr::Sub(l, r) |
