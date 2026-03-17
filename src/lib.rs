@@ -17,6 +17,6 @@ pub fn parse_module(code: &str) -> AResult<Module> {
 pub fn compile<Compiler: self::compiler::Compiler + Default>(
 	module: &Module,
 ) -> AResult<Compiler::Output> {
-	let mut compiler: Compiler = Default::default();
+	let compiler: Compiler = Default::default();
 	compiler.compile_module(module)
 }
