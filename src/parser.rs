@@ -1,7 +1,12 @@
 use std::{collections::HashMap, iter::Enumerate, ops::Range, slice::Iter};
 
 use anyhow::bail;
-use nbnf::nom::{self, combinator::eof, error::FromExternalError, multi::separated_list1};
+use nbnf::nom::{
+	self,
+	combinator::eof,
+	error::FromExternalError,
+	multi::{separated_list0, separated_list1},
+};
 use strum::{EnumDiscriminants, IntoDiscriminant};
 
 use crate::{
@@ -283,7 +288,7 @@ nbnf::nbnf!(r#"
 	expr_call<Expr> = (
 		<token(TokenTy::Identifier)>
 		-<token(TokenTy::LParen)>
-		<separated_list1(token(TokenTy::Comma), expr)>
+		<separated_list0(token(TokenTy::Comma), expr)>
 		-<token(TokenTy::RParen)>
 	)|<map_expr_call>;
 	expr_literal<Expr> =
