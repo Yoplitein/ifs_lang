@@ -60,6 +60,12 @@ impl WasmRuntime {
 		WasmRuntimeBuilder::new()
 	}
 
+	pub fn set_module(&mut self, module: &WasmOutput) -> AResult<()> {
+		let module = Module::new(&ENGINE, &module.wasm_module)?;
+		self.module = Arc::new(module);
+		Ok(())
+	}
+
 	pub fn instantiate(&self, num_threads: usize) -> AResult<Vec<ThreadInstance>> {
 		(0 .. num_threads)
 			.map(|_| {
