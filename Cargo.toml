@@ -7,6 +7,7 @@ edition = "2024"
 default = ["wasm"]
 wasm = [
 	"dep:wasm-encoder",
+	"dep:wasmtime",
 ]
 
 [dependencies]
@@ -28,4 +29,10 @@ rev = "9e855bdca16c850701a4cbbbec9e771ea5e27b16"
 version = "0.245"
 default-features = false
 features = ["std"]
+optional = true
+
+[dependencies.wasmtime]
+version = "41.0"
+default-features = false
+features = ["std", "runtime", "cranelift", "wat"]
 optional = true

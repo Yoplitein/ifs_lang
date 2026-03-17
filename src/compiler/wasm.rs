@@ -32,6 +32,7 @@ impl Default for WasmCompiler {
 pub struct WasmOutput {
 	pub global_indices: HashMap<String, u32>,
 	pub argument_indices: HashMap<String, u32>,
+	pub num_ifs_functions: usize,
 	pub wasm_module: Vec<u8>,
 }
 
@@ -163,10 +164,12 @@ impl Compiler for WasmCompiler {
 
 		let global_indices = self.global_indices;
 		let argument_indices = self.argument_indices;
+		let num_ifs_functions = module.functions.len();
 		let wasm_module = wasm_module.finish();
 		let output = WasmOutput {
 			global_indices,
 			argument_indices,
+			num_ifs_functions,
 			wasm_module,
 		};
 		Ok(output)

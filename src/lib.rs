@@ -1,6 +1,8 @@
 pub mod compiler;
 pub mod lexer;
 pub mod parser;
+#[cfg(feature = "wasm")]
+pub mod wasm_runtime;
 
 use crate::parser::Module;
 
