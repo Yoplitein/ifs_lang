@@ -65,7 +65,7 @@ impl Compiler for WasmCompiler {
 	fn compile_module(mut self, module: &Module) -> AResult<Self::Output> {
 		let mut wasm_module = WasmModule::default();
 
-		// declare globals
+		// declare and export globals
 		for (index, name) in module.globals.iter().enumerate() {
 			let global_index = wasm_module.globals.len();
 			wasm_module.globals.global(
@@ -101,7 +101,7 @@ impl Compiler for WasmCompiler {
 		}
 
 		// function codegen
-		for (index, func) in module.functions.iter().enumerate() {
+		for func in &module.functions {
 			self.compile_node(&func.body)?;
 			let mut compiled_func = std::mem::replace(
 				&mut self.current_function,
@@ -113,11 +113,6 @@ impl Compiler for WasmCompiler {
 			let func_index = wasm_module.functions.len();
 			assert_eq!(code_index, func_index);
 			wasm_module.functions.function(ifs_func_type);
-			wasm_module.exports.export(
-				&format!("f{index}"),
-				wasm_encoder::ExportKind::Func,
-				func_index,
-			);
 		}
 
 		// declare imports
@@ -127,6 +122,7 @@ impl Compiler for WasmCompiler {
 			.map(|(name, (arity, index))| (index, name, arity))
 			.collect();
 		host_functions.sort_by_key(|(index, ..)| *index);
+		let num_host_functions = host_functions.len();
 		let mut host_function_types = HashMap::new();
 		#[cfg(debug_assertions)]
 		let mut last_index = 0;
@@ -154,6 +150,15 @@ impl Compiler for WasmCompiler {
 			wasm_module
 				.imports
 				.import("host", &name, wasm_encoder::EntityType::Function(func_ty));
+		}
+
+		// export IFS functions
+		for index in 0 .. module.functions.len() {
+			wasm_module.exports.export(
+				&format!("f{index}"),
+				wasm_encoder::ExportKind::Func,
+				(num_host_functions + index) as u32,
+			);
 		}
 
 		let global_indices = self.global_indices;
