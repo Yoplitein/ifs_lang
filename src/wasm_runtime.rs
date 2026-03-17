@@ -1,4 +1,7 @@
-use std::{cell::RefCell, sync::LazyLock};
+use std::{
+	collections::HashMap,
+	sync::{Arc, LazyLock},
+};
 
 use anyhow::{anyhow, bail, ensure};
 use num::{Complex, complex::Complex64};
@@ -6,63 +9,113 @@ use wasmtime::{Config, Engine, Func, Instance, IntoFunc, Linker, Module, Store, 
 
 use crate::{AResult, compiler::WasmOutput, lexer::Value};
 
-pub struct WasmRuntime {
+pub struct ThreadInstance {
 	store: Store<()>,
 	instance: Instance,
 	functions: Vec<Func>,
 }
 
-impl WasmRuntime {
-	pub fn builder() -> WasmRuntimeBuilder {
-		WasmRuntimeBuilder::new().expect("could not construct WasmRuntimeBuilder")
-	}
-
-	pub fn get_variable(&mut self, name: &str) -> AResult<Complex64> {
-		let global = self
-			.instance
-			.get_global(&mut self.store, name)
-			.ok_or_else(|| anyhow!("no variable named {name:?}"))?;
-		let val = global.get(&mut self.store);
-		val.v128()
-			.map(unpack_v128)
-			.ok_or_else(|| anyhow!("variable {name:?} is not a V128(??!)"))
-	}
-
-	pub fn set_variable(&mut self, name: &str, value: Value) -> AResult<()> {
-		let value = pack_v128(value);
-		let global = self
-			.instance
-			.get_global(&mut self.store, name)
-			.ok_or_else(|| anyhow!("no variable named {name:?}"))?;
-		global.set(&mut self.store, value.into())?;
+impl ThreadInstance {
+	pub fn update_variables(&mut self, runtime: &WasmRuntime) -> AResult<()> {
+		for (name, &value) in &runtime.variables {
+			let global = self
+				.instance
+				.get_global(&mut self.store, name)
+				.ok_or_else(|| anyhow!("trying to set undefined global {name:?}"))?;
+			global.set(&mut self.store, pack_v128(value).into())?;
+		}
 		Ok(())
 	}
 
-	pub fn call(&mut self, function: usize, arguments: &[Value]) -> AResult<Complex64> {
+	pub fn call(&mut self, runtime: &WasmRuntime, function: usize) -> AResult<Complex64> {
 		ensure!(
 			function < self.functions.len(),
 			"trying to call IFS function {function} but only {} are defined",
 			self.functions.len()
 		);
+		let mut result = Val::V128(V128::from(0));
+		self.functions[function].call(
+			&mut self.store,
+			&runtime.arguments,
+			std::slice::from_mut(&mut result),
+		)?;
+		let Val::V128(result) = result else {
+			bail!("IFS function {function} returned something other than V128")
+		};
+		Ok(unpack_v128(result))
+	}
+}
 
-		// FIXME:
-		thread_local! {
-			static ARGUMENTS: RefCell<Vec<Val>> = RefCell::new(vec![]);
-		}
-		ARGUMENTS.with_borrow_mut(|argument_vals| {
-			argument_vals.clear();
-			argument_vals.extend(arguments.into_iter().map(|&v| Val::from(pack_v128(v))));
-			let mut result = Val::V128(V128::from(0));
-			self.functions[function].call(
-				&mut self.store,
-				argument_vals,
-				std::slice::from_mut(&mut result),
-			)?;
-			let Val::V128(result) = result else {
-				bail!("IFS function {function} returned something other than V128")
+pub struct WasmRuntime {
+	linker: Arc<Linker<()>>,
+	module: Arc<Module>,
+	num_ifs_functions: usize,
+	num_arguments: usize,
+	arguments: Vec<Val>,
+	variables: HashMap<String, Value>,
+}
+
+impl WasmRuntime {
+	pub fn builder() -> WasmRuntimeBuilder {
+		WasmRuntimeBuilder::new()
+	}
+
+	pub fn instantiate(&self, num_threads: usize) -> AResult<Vec<ThreadInstance>> {
+		(0 .. num_threads)
+			.map(|_| {
+				let mut store = Store::new(&ENGINE, ());
+				let instance = self.linker.instantiate(&mut store, &self.module)?;
+				let functions = (0 .. self.num_ifs_functions)
+					.map(|index| {
+						let name = format!("f{index}");
+						instance.get_func(&mut store, &name).ok_or_else(|| {
+							anyhow!(
+								"ifs function {index} is not defined (expected {} total)",
+								self.num_ifs_functions,
+							)
+						})
+					})
+					.collect::<AResult<Vec<_>>>()?;
+				Ok(ThreadInstance {
+					store,
+					instance,
+					functions,
+				})
+			})
+			.collect()
+	}
+
+	pub fn get_arguments(&self) -> impl Iterator<Item = Complex64> {
+		self.arguments.iter().map(|&v| {
+			let Val::V128(v) = v else {
+				unreachable!("arguments are enforced to be of type Val::V128 by set_arguments")
 			};
-			Ok(unpack_v128(result))
+			unpack_v128(v)
 		})
+	}
+
+	pub fn set_arguments(&mut self, args: &[Value]) -> AResult<()> {
+		ensure!(
+			args.len() == self.num_arguments,
+			"trying to set arguments with {} values, need {}",
+			args.len(),
+			self.num_arguments
+		);
+		self.arguments.clear();
+		let args = args.into_iter().map(|&v| Val::from(pack_v128(v)));
+		self.arguments.extend(args);
+		Ok(())
+	}
+
+	pub fn get_variable(&self, name: &str) -> AResult<Value> {
+		self.variables
+			.get(name)
+			.copied()
+			.ok_or_else(|| anyhow!("no variable named {name:?}"))
+	}
+
+	pub fn set_variable(&mut self, name: &str, value: Value) {
+		self.variables.insert(name.into(), value);
 	}
 }
 
@@ -73,40 +126,33 @@ static ENGINE: LazyLock<Engine> = LazyLock::new(|| {
 });
 
 pub struct WasmRuntimeBuilder {
-	store: Store<()>,
 	linker: Linker<()>,
 }
 
 impl WasmRuntimeBuilder {
-	pub fn new() -> AResult<Self> {
-		let store = Store::new(&ENGINE, ());
+	pub fn new() -> Self {
 		let linker = Linker::new(&ENGINE);
-		Ok(Self { store, linker })
+		Self { linker }
 	}
 
 	pub fn build(self, module: &WasmOutput) -> AResult<WasmRuntime> {
-		let Self { mut store, linker } = self;
+		let Self { linker } = self;
+		let linker = Arc::new(linker);
+		let num_arguments = module.argument_indices.len();
 		let &WasmOutput {
 			num_ifs_functions,
 			ref wasm_module,
 			..
 		} = module;
 		let module = Module::new(&ENGINE, wasm_module)?;
-		let instance = linker.instantiate(&mut store, &module)?;
-		let functions = (0 .. num_ifs_functions)
-			.map(|index| {
-				let name = format!("f{index}");
-				instance.get_func(&mut store, &name).ok_or_else(|| {
-					anyhow!(
-						"ifs function {index} is not defined (expected {num_ifs_functions} total)"
-					)
-				})
-			})
-			.collect::<AResult<Vec<_>>>()?;
+		let module = Arc::new(module);
 		Ok(WasmRuntime {
-			store,
-			instance,
-			functions,
+			linker,
+			module,
+			num_arguments,
+			num_ifs_functions,
+			arguments: Vec::with_capacity(num_arguments),
+			variables: HashMap::new(),
 		})
 	}
 
