@@ -1,4 +1,4 @@
-(func $_mul (export "_mul") (param $l v128) (param $r v128) (result v128)
+(func $_mul (param $l v128) (param $r v128) (result v128)
 	(local $l_re f64)
 	(local $l_im f64)
 	(local $r_re f64)
