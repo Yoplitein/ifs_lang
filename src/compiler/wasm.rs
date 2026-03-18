@@ -116,7 +116,7 @@ impl Compiler for WasmCompiler {
 					Value::Complex(Complex { re, im }) => (re, im),
 				};
 				self.current_function
-					.write_fmt(format_args!("v128.const f64x2 {re} {im}\n"))?;
+					.write_fmt(format_args!("v128.const f64x2 {re:.64} {im:.64}\n"))?;
 			},
 			Expr::Variable(name) => {
 				if self.globals.contains(name) {
