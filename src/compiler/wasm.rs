@@ -144,13 +144,13 @@ impl Compiler for WasmCompiler {
 						self.current_function.write_str("f64x2.sub\n")?;
 					},
 					Expr::Mul(..) => {
-						todo!()
+						self.current_function.write_str("call $_mul\n")?;
 					},
 					Expr::Div(..) => {
-						todo!()
+						self.current_function.write_str("call $_div\n")?;
 					},
 					Expr::Pow(..) => {
-						todo!()
+						self.current_function.write_str("call $_pow\n")?;
 					},
 					_ => unreachable!(),
 				}
