@@ -5,6 +5,7 @@ use std::{
 
 use anyhow::{anyhow, bail, ensure};
 use num::{Complex, complex::Complex64};
+pub use wasmtime;
 use wasmtime::{Config, Engine, Func, Instance, IntoFunc, Linker, Module, Store, V128, Val};
 
 use crate::{AResult, compiler::WasmOutput, lexer::Value};
