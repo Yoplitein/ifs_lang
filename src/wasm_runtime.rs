@@ -23,7 +23,9 @@ impl ThreadInstance {
 				.instance
 				.get_global(&mut self.store, name)
 				.ok_or_else(|| anyhow!("trying to set undefined global {name:?}"))?;
-			global.set(&mut self.store, pack_v128(value).into())?;
+			global
+				.set(&mut self.store, pack_v128(value).into())
+				.map_err(display_err)?;
 		}
 		Ok(())
 	}
@@ -35,11 +37,13 @@ impl ThreadInstance {
 			self.functions.len()
 		);
 		let mut result = Val::V128(V128::from(0));
-		self.functions[function].call(
-			&mut self.store,
-			&runtime.arguments,
-			std::slice::from_mut(&mut result),
-		)?;
+		self.functions[function]
+			.call(
+				&mut self.store,
+				&runtime.arguments,
+				std::slice::from_mut(&mut result),
+			)
+			.map_err(display_err)?;
 		let Val::V128(result) = result else {
 			bail!("IFS function {function} returned something other than V128")
 		};
@@ -62,7 +66,7 @@ impl WasmRuntime {
 	}
 
 	pub fn set_module(&mut self, module: &WasmOutput) -> AResult<()> {
-		let module = Module::new(&ENGINE, &module.wat_module)?;
+		let module = Module::new(&ENGINE, &module.wat_module).map_err(display_err)?;
 		self.module = Arc::new(module);
 		Ok(())
 	}
@@ -71,7 +75,10 @@ impl WasmRuntime {
 		(0 .. num_threads)
 			.map(|_| {
 				let mut store = Store::new(&ENGINE, ());
-				let instance = self.linker.instantiate(&mut store, &self.module)?;
+				let instance = self
+					.linker
+					.instantiate(&mut store, &self.module)
+					.map_err(display_err)?;
 				let functions = (0 .. self.num_ifs_functions)
 					.map(|index| {
 						let name = format!("f{index}");
@@ -151,7 +158,7 @@ impl WasmRuntimeBuilder {
 			wat_module: ref wasm_module,
 			..
 		} = module;
-		let module = Module::new(&ENGINE, wasm_module)?;
+		let module = Module::new(&ENGINE, wasm_module).map_err(display_err)?;
 		let module = Arc::new(module);
 		Ok(WasmRuntime {
 			linker,
@@ -168,9 +175,15 @@ impl WasmRuntimeBuilder {
 		name: &str,
 		func: impl IntoFunc<(), Params, Results>,
 	) -> AResult<Self> {
-		self.linker.func_wrap("host", name, func)?;
+		self.linker
+			.func_wrap("host", name, func)
+			.map_err(display_err)?;
 		Ok(self)
 	}
+}
+
+fn display_err<E: std::fmt::Display>(err: E) -> anyhow::Error {
+	anyhow!("{err}")
 }
 
 pub fn pack_v128(value: Value) -> V128 {
