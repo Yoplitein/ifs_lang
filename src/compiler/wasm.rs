@@ -1,10 +1,16 @@
 use std::{
 	collections::{HashMap, HashSet},
 	fmt::Write,
+	sync::LazyLock,
 };
 
 use anyhow::{Ok, bail, ensure};
 use num::Complex;
+use wast::{
+	Wat,
+	core::{ModuleField, ModuleKind},
+	parser::{ParseBuffer, parse},
+};
 
 use super::Compiler;
 use crate::{
@@ -87,6 +93,7 @@ impl Compiler for WasmCompiler {
 		for item in imports.into_iter().chain(globals).chain(functions) {
 			wat_module.write_str(&item)?;
 		}
+		wat_module.write_str(INTRINSICS_WAT)?;
 		wat_module.write_str(")")?;
 
 		let globals = self.globals;
@@ -158,18 +165,55 @@ impl Compiler for WasmCompiler {
 					self.compile_node(arg)?;
 				}
 
-				// TODO: intrinsics
-				if let Some(last_arity) = self.host_functions.insert(function.clone(), arity) {
-					ensure!(
-						arity == last_arity,
-						"host function {function:?} has disallowed varying arity ({last_arity} / \
-						 {arity})"
-					);
+				if INTRINSICS.contains(function) {
+					// TODO: check arity
+					self.current_function
+						.write_fmt(format_args!("call ${function}\n"))?;
+				} else {
+					if function.starts_with("_") {
+						bail!("function name {function:?} has disallowed leading underscore");
+					}
+					if let Some(last_arity) = self.host_functions.insert(function.clone(), arity) {
+						ensure!(
+							arity == last_arity,
+							"host function {function:?} has disallowed varying arity \
+							 ({last_arity} / {arity})"
+						);
+					}
+					self.current_function
+						.write_fmt(format_args!("call $host_{function}\n"))?;
 				}
-				self.current_function
-					.write_fmt(format_args!("call $host_{function}\n"))?;
 			},
 		}
 		Ok(())
 	}
 }
+
+const INTRINSICS_WAT: &'static str = include_str!("./intrinsics.wat");
+static INTRINSICS: LazyLock<HashSet<String>> = LazyLock::new(|| {
+	let buf = ParseBuffer::new(INTRINSICS_WAT).expect("could not construct ParseBuffer");
+	let wat = parse::<Wat>(&buf).expect("could not parse `intrinsics.wat`");
+
+	let Wat::Module(wat) = wat else {
+		unreachable!("intrinsics.wat should be a plain module")
+	};
+	let ModuleKind::Text(mut fields) = wat.kind else {
+		unreachable!("`intrinsics.wat` should be text")
+	};
+
+	let mut intrinsics = HashSet::new();
+	for field in &mut fields {
+		match field {
+			ModuleField::Func(func) => {
+				let Some(id) = func.id else { continue };
+				if id.name().starts_with("_") {
+					// operator impl
+					continue;
+				}
+				intrinsics.insert(id.name().into());
+			},
+			_ => {},
+		}
+	}
+	intrinsics
+});
