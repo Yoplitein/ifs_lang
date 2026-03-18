@@ -1,4 +1,9 @@
-use std::{collections::HashMap, iter::Enumerate, ops::Range, slice::Iter};
+use std::{
+	collections::{HashMap, HashSet},
+	iter::Enumerate,
+	ops::Range,
+	slice::Iter,
+};
 
 use anyhow::bail;
 use nbnf::nom::{
@@ -16,8 +21,8 @@ use crate::{
 
 #[derive(Debug, Default)]
 pub struct Module {
-	pub globals: Vec<String>,
-	pub arguments: Vec<String>,
+	pub globals: HashSet<String>,
+	pub arguments: HashSet<String>,
 	pub functions: Vec<Function>,
 }
 
@@ -94,8 +99,20 @@ enum Top {
 impl Top {
 	fn fold(&self, module: &mut Module, constants: &mut VariableMap) -> AResult<()> {
 		match self {
-			Top::VarDecl(names) => module.globals.extend(names.clone()),
-			Top::ArgDecl(names) => module.arguments.extend(names.clone()),
+			Top::VarDecl(names) => {
+				for name in names {
+					if !module.globals.insert(name.clone()) {
+						bail!("global {name:?} defined twice")
+					}
+				}
+			},
+			Top::ArgDecl(names) => {
+				for name in names {
+					if !module.arguments.insert(name.clone()) {
+						bail!("argument {name:?} defined twice")
+					}
+				}
+			},
 			Top::ConstDecl { variable, value } => {
 				if constants.contains_key(variable) {
 					bail!("redefinition of constant `{}`", variable);

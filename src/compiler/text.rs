@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{collections::HashSet, marker::PhantomData};
 
 use num::Complex;
 
@@ -20,8 +20,8 @@ impl<Formatter: ValueFormatter> Default for TextCompiler<Formatter> {
 
 #[derive(Debug)]
 pub struct TextOutput {
-	pub globals: Vec<String>,
-	pub arguments: Vec<String>,
+	pub globals: HashSet<String>,
+	pub arguments: HashSet<String>,
 	pub functions: Vec<String>,
 }
 
