@@ -19,10 +19,39 @@ use crate::{
 	lexer::{Token, TokenTy, Value},
 };
 
+#[derive(Clone, Debug, Default)]
+pub struct ArgumentSet(HashMap<String, usize>);
+
+impl ArgumentSet {
+	fn insert(&mut self, name: &str) -> AResult<()> {
+		let index = self.0.len();
+		if let Some(_) = self.0.insert(name.into(), index) {
+			bail!("argument {name:?} defined twice")
+		}
+		Ok(())
+	}
+
+	pub fn len(&self) -> usize {
+		self.0.len()
+	}
+
+	pub fn contains(&self, name: &str) -> bool {
+		self.0.contains_key(name)
+	}
+
+	pub fn get(&self, name: &str) -> Option<usize> {
+		self.0.get(name).copied()
+	}
+
+	pub fn names(&self) -> impl Iterator<Item = &str> {
+		self.0.keys().map(|v| v.as_ref())
+	}
+}
+
 #[derive(Debug, Default)]
 pub struct Module {
 	pub globals: HashSet<String>,
-	pub arguments: HashSet<String>,
+	pub arguments: ArgumentSet,
 	pub functions: Vec<Function>,
 }
 
@@ -108,9 +137,7 @@ impl Top {
 			},
 			Top::ArgDecl(names) => {
 				for name in names {
-					if !module.arguments.insert(name.clone()) {
-						bail!("argument {name:?} defined twice")
-					}
+					module.arguments.insert(name)?;
 				}
 			},
 			Top::ConstDecl { variable, value } => {

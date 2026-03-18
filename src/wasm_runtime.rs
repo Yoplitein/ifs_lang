@@ -61,7 +61,7 @@ impl WasmRuntime {
 	}
 
 	pub fn set_module(&mut self, module: &WasmOutput) -> AResult<()> {
-		let module = Module::new(&ENGINE, &module.wasm_module)?;
+		let module = Module::new(&ENGINE, &module.wat_module)?;
 		self.module = Arc::new(module);
 		Ok(())
 	}
@@ -144,10 +144,10 @@ impl WasmRuntimeBuilder {
 	pub fn build(self, module: &WasmOutput) -> AResult<WasmRuntime> {
 		let Self { linker } = self;
 		let linker = Arc::new(linker);
-		let num_arguments = module.argument_indices.len();
+		let num_arguments = module.arguments.len();
 		let &WasmOutput {
 			num_ifs_functions,
-			ref wasm_module,
+			wat_module: ref wasm_module,
 			..
 		} = module;
 		let module = Module::new(&ENGINE, wasm_module)?;

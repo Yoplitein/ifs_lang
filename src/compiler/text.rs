@@ -6,7 +6,7 @@ use super::Compiler;
 use crate::{
 	AResult,
 	lexer::Value,
-	parser::{Expr, Module},
+	parser::{ArgumentSet, Expr, Module},
 };
 
 /// Compiles a function AST back to text, i.e. for reparsing
@@ -21,7 +21,7 @@ impl<Formatter: ValueFormatter> Default for TextCompiler<Formatter> {
 #[derive(Debug)]
 pub struct TextOutput {
 	pub globals: HashSet<String>,
-	pub arguments: HashSet<String>,
+	pub arguments: ArgumentSet,
 	pub functions: Vec<String>,
 }
 
