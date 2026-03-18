@@ -326,7 +326,6 @@ dependencies = [
  "nbnf",
  "num",
  "strum",
- "wasm-encoder 0.245.1",
  "wasmtime",
 ]
 
