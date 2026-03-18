@@ -22,15 +22,15 @@ git = "https://github.com/Yoplitein/nbnf.git"
 rev = "9e855bdca16c850701a4cbbbec9e771ea5e27b16"
 
 [dependencies.strum]
-version = "0.27"
+version = "0.28"
 features = ["derive"]
 
 [dependencies.wasmtime]
-version = "41.0"
+version = "42"
 default-features = false
 features = ["std", "runtime", "cranelift", "wat"]
 optional = true
 
 [dependencies.wast]
-version = "245.0"
+version = "245"
 optional = true
